@@ -94,10 +94,18 @@ inline is the real fix and is not done here.
 
 ```bash
 node tests/structure-tests.mjs
+node tests/behaviour-tests.mjs
 ```
 
-18 structural assertions, in the style of the Chrome extension's suite: no
+20 structural assertions, in the style of the Chrome extension's suite: no
 `srcdoc` frame may carry `allow-same-origin`, the content type must be escaped,
 the CSP must contain no `unsafe-eval`, no fabricated SRI hash may ship. These
 fail if a later edit undoes any of it — which is exactly how this bug survived
 in the first place.
+
+And a 27-test behavioural suite that lifts the RPC relay, the permission map
+and the reply routing out of the file and executes them against a simulated
+window. It exists because two fixes from this very cycle shipped broken while
+every structural check stayed green — the reply-target and
+permission-vocabulary regressions kept the code *looking* right with the
+behaviour dead. Structure proves a pattern exists; behaviour proves it works.
