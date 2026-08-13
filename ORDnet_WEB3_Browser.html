@@ -14,10 +14,62 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!--
+      Content Security Policy.
+
+      script-src is limited to 'self' plus the two CDNs the viewers below need,
+      and does NOT contain 'unsafe-eval'.
+
+      It DOES contain 'unsafe-inline', because this file is a single-document
+      browser: all 1600 lines of its logic are one inline <script>, and the
+      policy cannot forbid inline script without disabling the application. So
+      be plain about what this buys and what it does not: it stops a loaded
+      remote script from a host we did not name, and it stops eval. It does not
+      stop injected inline script. The real defence against that is the
+      escaping and the sandbox above, not this header. Removing 'unsafe-inline'
+      needs the script extracted to a file with a hash or nonce — worth doing,
+      not done here.
+
+      frame-src allows the wallet and tool plugins to load over https and
+      blob:, while inscription content renders from srcdoc inside a sandbox
+      that has no origin of its own — so it is covered by sandbox rather than
+      by an origin allowance.
+
+      The four scripts below still need Subresource Integrity. Without SRI, one
+      compromised CDN means arbitrary JavaScript in a document that sits next to
+      a wallet frame; with it, a modified file simply fails to load.
+
+      The integrity attributes are NOT filled in here on purpose: a wrong hash
+      silently blocks the script, so these must be generated against the exact
+      bytes the CDN serves rather than guessed. Run `bash tools/generate-sri.sh`
+      and paste the four lines it prints. crossorigin and referrerpolicy are
+      already set, which is what SRI needs to work.
+
+      NOTE FOR THE ON-CHAIN COPY: these four remote scripts are what make the
+      inscribed copy of this browser depend on the network. They power the PDF,
+      DOCX, XLSX and QR viewers only — everything else works without them. If
+      you inscribe this file, either vendor them inline or accept that those
+      four viewers degrade gracefully when the CDNs are unreachable.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self' data: blob:;
+      script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src https://fonts.gstatic.com data:;
+      img-src 'self' data: blob: https:;
+      connect-src 'self' https:;
+      frame-src https: blob:;
+      object-src 'none';
+      base-uri 'none';
+      form-action 'none'">
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         * {
             margin: 0;
@@ -1307,6 +1359,10 @@
     <!-- Wallet host overlay: the cross-origin wallet iframe is surfaced here when it needs the user -->
     <div class="wallet-overlay" id="walletOverlay" onclick="walletBackdrop(event)">
         <div class="wallet-modal">
+            <!-- allow-same-origin is safe here ONLY because the wallet is loaded
+                 from its own https origin, not from srcdoc: the sandbox then grants
+                 it its own origin, not ours. It is required for the wallet to keep
+                 its own storage. Never point this frame at srcdoc or a data: URL. -->
             <iframe id="walletFrame" title="ORD/plug Wallet"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
         </div>
@@ -2014,7 +2070,7 @@
             }
             
             inscriptionInfoContainer.innerHTML = `
-                <span>Type: ${inscription.contentType}</span>
+                <span>Type: ${escapeHtml(inscription.contentType)}</span>
                 <span>${(inscription.data.length || inscription.data.byteLength || 0).toLocaleString()} bytes</span>
                 ${timestampText}
                 ${blockText}
@@ -2024,8 +2080,20 @@
             content.className = 'inscription-content';
             
             if (inscription.contentType.startsWith('text/html')) {
+                // allow-same-origin is DELIBERATELY ABSENT and must stay absent.
+                // Combined with allow-scripts it cancels the sandbox: a srcdoc
+                // document then inherits THIS document's origin — the same origin
+                // that holds the plugin registry in localStorage and talks to the
+                // wallet frame. Arbitrary on-chain HTML, written by anyone for
+                // under a cent, would be able to rewrite PLUGIN_STORE to point the
+                // wallet at an attacker URL, or postMessage host2wallet directly.
+                // Without it the inscription still runs its own scripts, but in an
+                // opaque origin with no access to this page and no shared storage.
+                // (The Chrome extension found, fixed and regression-tested this
+                // exact bug in viewer.html; this is the same fix.)
                 const iframe = document.createElement('iframe');
-                iframe.sandbox = 'allow-scripts allow-same-origin allow-downloads';
+                iframe.sandbox = 'allow-scripts allow-downloads';
+                iframe.referrerPolicy = 'no-referrer';
                 iframe.srcdoc = preprocessHtmlContent(inscription.data);
                 content.appendChild(iframe);
             } else if (inscription.contentType.startsWith('text/')) {
@@ -2129,7 +2197,7 @@
                 audio.src = 'data:' + inscription.contentType + ';base64,' + base64;
                 content.appendChild(audio);
             } else {
-                content.innerHTML = `<p>Unsupported content type: ${inscription.contentType}</p>`;
+                content.innerHTML = `<p>Unsupported content type: ${escapeHtml(inscription.contentType)}</p>`;
             }
             
             inscriptionDiv.innerHTML = '';
@@ -2686,6 +2754,28 @@
         let walletOrigin = '*';
         let pendingConsent = null;
         const rpcRoutes = {};   // request id -> source window (content iframe)
+        const rpcOrigins = {};  // request id -> origin that asked, so the reply is not broadcast
+
+        /**
+         * The targetOrigin to answer a specific window with.
+         *
+         * A document in a sandbox WITHOUT allow-same-origin has an opaque origin,
+         * and the browser reports that to us as the STRING "null" — which is
+         * truthy. Passing it to postMessage throws SyntaxError, so an earlier
+         * version of this code silently dropped every wallet response into an
+         * empty catch: the content frame is exactly such a document, so nothing
+         * worked at all.
+         *
+         * For an opaque origin '*' is the only value a browser accepts. That is
+         * acceptable here and only here, because we still hold the window
+         * REFERENCE the request came from (rpcRoutes[d.id]) and post to that
+         * window alone — '*' widens who may read it, not who receives it. Named
+         * origins are still pinned exactly.
+         */
+        function replyTarget(origin){
+            if (!origin || origin === 'null') return '*';
+            return origin;
+        }
 
         function loadPlugins(){
             try { installedPlugins = JSON.parse(localStorage.getItem(PLUGIN_STORE) || '[]'); }
@@ -2746,6 +2836,38 @@
                     <button class="pc-remove" onclick="removePlugin(${i})" title="Remove">🗑</button>
                 </div>`).join('');
         }
+        // ---- plugin permissions: declared at install, enforced at call time ----
+        // Maps an RPC method to the permission a plugin must have declared.
+        // Anything not listed falls back to 'sign' — the strictest permission in
+        // the vocabulary — so a method added later fails closed rather than
+        // silently becoming public.
+        // The vocabulary here MUST be the one PERMISSION_LABELS and defaultPerms
+        // actually use — 'pay', 'inscribe', 'sign', 'wallet:read'. An earlier
+        // version of this map invented 'wallet:write' and 'wallet:sign', which
+        // appear nowhere else in the file, so every normally installed wallet
+        // (defaultPerms = wallet:read, pay, inscribe, sign) was refused for pay,
+        // inscribe and sign. A permission model that blocks the happy path is a
+        // broken product, not a safe one.
+        const METHOD_PERMISSION = {
+            connect: 'wallet:read', isConnected: 'wallet:read', getAddress: 'wallet:read',
+            getPublicKey: 'wallet:read', getBalance: 'wallet:read', getUtxos: 'wallet:read',
+            getOrdinals: 'wallet:read', getNetwork: 'wallet:read', getVersion: 'wallet:read',
+            pay: 'pay', sendTx: 'pay',
+            inscribe: 'inscribe',
+            signMessage: 'sign', signTx: 'sign', signAction: 'sign'
+        };
+        // Unknown methods fail closed to the strictest permission in the set.
+        function methodPermission(m){ return METHOD_PERMISSION[m] || 'sign'; }
+        function methodAllowed(plugin, m){
+            const need = methodPermission(m);
+            const declared = (plugin && Array.isArray(plugin.perms)) ? plugin.perms : null;
+            // A plugin installed before permissions existed has none recorded.
+            // Refusing it outright would break wallets people already have, so
+            // read-only calls still pass and anything that moves value does not.
+            if (!declared || !declared.length) return need === 'wallet:read';
+            return declared.indexOf(need) !== -1;
+        }
+
         function escapeHtml(s){ return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
 
         function togglePlugin(i){
@@ -2979,7 +3101,20 @@
                 // messages we trust only from the wallet frame
                 if (d.dir === 'wallet2host'){
                     const target = rpcRoutes[d.id];
-                    if (target){ delete rpcRoutes[d.id]; target.postMessage({ __ordnet:1, dir:'res', id:d.id, ok:d.ok, result:d.result, error:d.error }, '*'); }
+                    if (target){
+                        delete rpcRoutes[d.id];
+                        // Reply only to the origin that asked. '*' broadcast a wallet
+                        // response — which can carry an address or a signature — to
+                        // whatever document happened to occupy that window by the
+                        // time the reply came back.
+                        const to = rpcOrigins[d.id];
+                        delete rpcOrigins[d.id];
+                        try {
+                            target.postMessage({ __ordnet:1, dir:'res', id:d.id, ok:d.ok, result:d.result, error:d.error }, replyTarget(to));
+                        } catch (err) {
+                            console.warn('[ordnet] could not deliver RPC response', d.id, err && err.message);
+                        }
+                    }
                 } else if (d.dir === 'wallet-ui'){
                     document.getElementById('walletOverlay').classList.toggle('active', !!d.show);
                 } else if (d.dir === 'wallet-ready'){
@@ -2989,7 +3124,11 @@
                 } else if (d.dir === 'event'){
                     // broadcast wallet events to the active content iframe
                     const ci = document.querySelector('#inscriptionDiv iframe');
-                    if (ci && ci.contentWindow) ci.contentWindow.postMessage(d, '*');
+                    // The content frame is sandboxed without allow-same-origin, so its
+                    // origin is opaque and '*' is the only value that reaches it. Events
+                    // broadcast here must therefore never carry key material, addresses
+                    // or signatures — only the fact that something changed.
+                    if (ci && ci.contentWindow) ci.contentWindow.postMessage({ __ordnet:1, dir:'event', event: d.event || null }, '*');
                 }
                 return;
             }
@@ -2998,10 +3137,27 @@
             if (d.dir === 'req'){
                 const w = activeWallet();
                 if (!w){
-                    if (e.source) e.source.postMessage({ __ordnet:1, dir:'res', id:d.id, ok:false, error:'No wallet plugin installed' }, '*');
+                    if (e.source) {
+                        try { e.source.postMessage({ __ordnet:1, dir:'res', id:d.id, ok:false, error:'No wallet plugin installed' }, replyTarget(e.origin)); }
+                        catch (err) { console.warn('[ordnet] could not deliver RPC error', d.id, err && err.message); }
+                    }
                     return;
                 }
                 rpcRoutes[d.id] = e.source;
+                rpcOrigins[d.id] = e.origin || null;
+                // The install screen showed the plugin's declared permissions and
+                // stored them, and then nothing ever consulted them: a plugin that
+                // asked for wallet:read received the full RPC surface including pay
+                // and sign. A permission screen that does not gate anything is worse
+                // than none — it manufactures confidence. Now it gates.
+                if (!methodAllowed(w, d.method)){
+                    if (e.source) {
+                        try { e.source.postMessage({ __ordnet:1, dir:'res', id:d.id, ok:false, error:'Permission denied: this plugin did not request "' + methodPermission(d.method) + '"' }, replyTarget(e.origin)); }
+                        catch (err) { console.warn('[ordnet] could not deliver permission error', d.id, err && err.message); }
+                    }
+                    delete rpcRoutes[d.id]; delete rpcOrigins[d.id];
+                    return;
+                }
                 if (frame.contentWindow){
                     frame.contentWindow.postMessage({ __ordnet:1, dir:'host2wallet', id:d.id, method:d.method, params:d.params, origin: currentOriginLabel() }, walletOrigin);
                 }
