@@ -1,5 +1,11 @@
 # ORD/browser — the ORDnet Web3 Browser
 
+[![tests](https://github.com/ORDNET/ORDnet-Web3-Browser/actions/workflows/test.yml/badge.svg)](https://github.com/ORDNET/ORDnet-Web3-Browser/actions/workflows/test.yml)
+[![test count](https://img.shields.io/badge/tests-20_structural_+_27_behavioural-2b8a3e?style=flat-square)](#tests)
+[![form](https://img.shields.io/badge/form-single_HTML_file-364fc7?style=flat-square)](#verify-your-copy)
+[![distribution](https://img.shields.io/badge/also_lives-on--chain-5f3dc4?style=flat-square)](#verify-your-copy)
+[![license](https://img.shields.io/badge/license-source--available-6a737d?style=flat-square)](LICENSE)
+
 A complete web3 browser in **one HTML file**: type `name.web3` and browse
 on-chain sites, files, and apps served straight from the BSV blockchain —
 tabs, history, a viewer for on-chain PDF/Word/Excel/image/audio/video
@@ -38,6 +44,37 @@ discoverable home: the canonical source, published by its author.
 Public chain data arrives via WhatsOnChain and the ORDnet content router;
 both are configuration in the file's constants, not trust — the content is
 addressed by txid, so what loads is what was inscribed.
+
+## Verify your copy
+
+A browser that handles on-chain identity deserves the same scrutiny it
+applies to the chain. The application is one file, so its integrity is one
+command:
+
+```bash
+sha256sum ORDnet_WEB3_Browser.html
+# v1.4.0 -> cb45eab7fa69dfcd47e80cbfb49335b52178f56cf7733ea64771f06192022af4
+```
+
+The hash of the file is listed in the release notes of every release from
+v1.4.0 on — check the copy you downloaded against the tag it came from, or
+against the on-chain inscription itself: the same bytes, addressed by txid.
+
+## Tests
+
+```bash
+node tests/structure-tests.mjs
+# -> 20 passed, 0 failed
+node tests/behaviour-tests.mjs
+# -> 27 passed, 0 failed
+```
+
+Two suites, both on bare Node: structural assertions (the content sandbox
+carries no `allow-same-origin`, the CSP contains no `unsafe-eval`, no
+fabricated SRI hash ships) and a behavioural suite that lifts the RPC relay,
+permission map and reply routing out of the file and executes them. See
+[SECURITY-FIXES-2026-08-13.md](SECURITY-FIXES-2026-08-13.md) and
+[SECURITY.md](SECURITY.md).
 
 ## License
 
